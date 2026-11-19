@@ -33,8 +33,17 @@ import { ResilientImage } from '../components/ResilientImage';
 import { InvitationRenderer } from '../components/InvitationRenderer';
 
 export function DashboardPage() {
-  const { user, profile, loading, authReady, resendVerification, refreshUser, updateDisplayName, logout } =
-    useAuth();
+  const {
+    user,
+    profile,
+    isEmailVerified,
+    loading,
+    authReady,
+    resendVerification,
+    refreshUser,
+    updateDisplayName,
+    logout,
+  } = useAuth();
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -63,7 +72,7 @@ export function DashboardPage() {
   }, [authReady, loading, user, navigate]);
 
   useEffect(() => {
-    if (!user || !user.emailVerified) {
+    if (!user || !isEmailVerified) {
       setDataLoading(false);
       return;
     }
@@ -79,25 +88,28 @@ export function DashboardPage() {
       unsubGuests();
       unsubRsvps();
     };
-  }, [user]);
+  }, [user, isEmailVerified]);
 
   useEffect(() => {
     setEditName(profile?.name || user?.displayName || '');
   }, [profile, user]);
 
   const stats = useMemo(() => {
+    const activeIds = new Set(invitations.map((i) => i.invitationId));
+    const activeGuests = guests.filter((g) => activeIds.has(g.invitationId));
+    const activeRsvps = rsvps.filter((r) => activeIds.has(r.invitationId));
     const publishedCount = invitations.filter((i) => i.status === 'published').length;
     const draftCount = invitations.length - publishedCount;
-    const attendingRsvps = rsvps.filter((r) => r.attendance === 'attending');
-    const declinedRsvps = rsvps.filter((r) => r.attendance === 'unable');
+    const attendingRsvps = activeRsvps.filter((r) => r.attendance === 'attending');
+    const declinedRsvps = activeRsvps.filter((r) => r.attendance === 'unable');
     const confirmedSeats = attendingRsvps.reduce((sum, r) => sum + (r.guestCount || 1), 0);
 
     return {
       totalInvitations: invitations.length,
       publishedCount,
       draftCount,
-      totalGuests: guests.length,
-      totalResponses: rsvps.length,
+      totalGuests: activeGuests.length,
+      totalResponses: activeRsvps.length,
       confirmedSeats,
       declinedCount: declinedRsvps.length,
     };
@@ -206,7 +218,7 @@ export function DashboardPage() {
             <Link to="/dashboard" className="text-[#443C35] font-medium whitespace-nowrap shrink-0">
               Studio Dashboard
             </Link>
-            <Link to="/" className="hover:text-[#443C35] whitespace-nowrap shrink-0">
+            <Link to="/#templates" className="hover:text-[#443C35] whitespace-nowrap shrink-0">
               Templates
             </Link>
             <button
@@ -221,7 +233,7 @@ export function DashboardPage() {
           <div className="flex items-center gap-3 shrink-0">
             <button
               type="button"
-              disabled={creating || !user.emailVerified}
+              disabled={creating || !isEmailVerified}
               onClick={handleCreate}
               className="inline-flex items-center gap-2 px-4 py-2 bg-[#443C35] text-[#FAF7F2] text-xs font-medium rounded-lg hover:bg-[#5A5047] transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-50"
             >
@@ -234,7 +246,7 @@ export function DashboardPage() {
 
       <main className="max-w-[1200px] mx-auto px-6 py-10 space-y-8">
         {/* Email verification gate if email/password account is not yet verified */}
-        {!user.emailVerified && (
+        {!isEmailVerified && (
           <div className="bg-white border border-[#C6AC83] rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <h2 className="font-cormorant text-2xl font-semibold">Verify your email address</h2>
@@ -399,7 +411,7 @@ export function DashboardPage() {
             {invitations.length === 0 && (
               <button
                 type="button"
-                disabled={creating || !user.emailVerified}
+                disabled={creating || !isEmailVerified}
                 onClick={handleCreate}
                 className="inline-flex items-center gap-2 px-6 py-2.5 bg-[#443C35] text-white text-sm font-medium rounded-lg hover:bg-[#5A5047] cursor-pointer disabled:opacity-50"
               >

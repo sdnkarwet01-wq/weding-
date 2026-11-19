@@ -37,7 +37,7 @@ function normalizeInvitationPayload(inv: InvitationDoc): Omit<InvitationDoc, 'cr
   return {
     invitationId: inv.invitationId,
     ownerId: inv.ownerId,
-    slug: sanitizeSlug(inv.slug) || inv.invitationId.toLowerCase(),
+    slug: sanitizeSlug(inv.slug),
     templateId: inv.templateId,
     status: inv.status,
     groomData: {
@@ -176,15 +176,16 @@ export async function createNewInvitation(
 export async function saveInvitationChanges(
   inv: InvitationDoc,
   previousSlug: string
-): Promise<void> {
+): Promise<string> {
   const normalized = normalizeInvitationPayload(inv);
   const newSlug = normalized.slug;
+  const cleanPrevSlug = sanitizeSlug(previousSlug);
 
   if (newSlug.length < 3) {
     throw new Error('Slug must be at least 3 characters (letters, numbers, hyphens).');
   }
 
-  if (newSlug !== previousSlug) {
+  if (newSlug !== cleanPrevSlug) {
     const free = await isSlugAvailable(newSlug, inv.invitationId);
     if (!free) {
       throw new Error(`The URL slug "${newSlug}" is already taken. Please choose another.`);
@@ -199,9 +200,9 @@ export async function saveInvitationChanges(
     updatedAt: serverTimestamp(),
   });
 
-  if (newSlug !== previousSlug) {
-    if (previousSlug) {
-      batch.delete(doc(db, 'slugs', previousSlug));
+  if (newSlug !== cleanPrevSlug) {
+    if (cleanPrevSlug) {
+      batch.delete(doc(db, 'slugs', cleanPrevSlug));
     }
     batch.set(doc(db, 'slugs', newSlug), {
       slug: newSlug,
@@ -221,19 +222,25 @@ export async function saveInvitationChanges(
 
   try {
     await batch.commit();
+    return newSlug;
   } catch (err) {
     handleFirestoreError(err, OperationType.UPDATE, `invitations/${inv.invitationId}`);
   }
 }
 
 export async function toggleInvitationStatus(inv: InvitationDoc): Promise<'draft' | 'published'> {
+  const cleanSlug = sanitizeSlug(inv.slug);
+  if (cleanSlug.length < 3) {
+    throw new Error('Please set a valid URL slug (at least 3 characters) before publishing.');
+  }
+
   const nextStatus = inv.status === 'published' ? 'draft' : 'published';
   const batch = writeBatch(db);
   batch.update(doc(db, 'invitations', inv.invitationId), {
     status: nextStatus,
     updatedAt: serverTimestamp(),
   });
-  batch.update(doc(db, 'slugs', inv.slug), {
+  batch.update(doc(db, 'slugs', cleanSlug), {
     status: nextStatus,
     invitationId: inv.invitationId,
     updatedAt: serverTimestamp(),
@@ -248,13 +255,51 @@ export async function toggleInvitationStatus(inv: InvitationDoc): Promise<'draft
 }
 
 export async function deleteUserInvitation(inv: InvitationDoc): Promise<void> {
-  const batch = writeBatch(db);
-  batch.delete(doc(db, 'invitations', inv.invitationId));
-  if (inv.slug) {
-    batch.delete(doc(db, 'slugs', inv.slug));
-  }
   try {
-    await batch.commit();
+    const [guestsSnap, rsvpsSnap, wishesSnap] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, 'guests'),
+          where('ownerId', '==', inv.ownerId),
+          where('invitationId', '==', inv.invitationId)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, 'rsvps'),
+          where('ownerId', '==', inv.ownerId),
+          where('invitationId', '==', inv.invitationId)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, 'wishes'),
+          where('ownerId', '==', inv.ownerId),
+          where('invitationId', '==', inv.invitationId)
+        )
+      ),
+    ]);
+
+    const refsToDelete = [
+      ...guestsSnap.docs.map((d) => d.ref),
+      ...rsvpsSnap.docs.map((d) => d.ref),
+      ...wishesSnap.docs.map((d) => d.ref),
+      doc(db, 'invitations', inv.invitationId),
+    ];
+
+    const cleanSlug = sanitizeSlug(inv.slug);
+    if (cleanSlug.length >= 3) {
+      refsToDelete.push(doc(db, 'slugs', cleanSlug));
+    }
+
+    const CHUNK_SIZE = 450;
+    for (let i = 0; i < refsToDelete.length; i += CHUNK_SIZE) {
+      const batch = writeBatch(db);
+      for (const ref of refsToDelete.slice(i, i + CHUNK_SIZE)) {
+        batch.delete(ref);
+      }
+      await batch.commit();
+    }
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `invitations/${inv.invitationId}`);
   }
@@ -271,17 +316,32 @@ export async function getInvitationById(invitationId: string): Promise<Invitatio
   }
 }
 
-export async function getPublicInvitationBySlug(slug: string): Promise<InvitationDoc | null> {
+export interface PublicSlugResolution {
+  status: 'found' | 'draft' | 'not-found';
+  invitation: InvitationDoc | null;
+}
+
+export async function getPublicInvitationBySlug(
+  slug: string,
+  viewerUid?: string
+): Promise<PublicSlugResolution> {
   const clean = sanitizeSlug(slug);
-  if (!clean) return null;
+  if (clean.length < 3) return { status: 'not-found', invitation: null };
   const slugPath = `slugs/${clean}`;
   try {
     const slugSnap = await getDoc(doc(db, 'slugs', clean));
-    if (!slugSnap.exists()) return null;
-    const slugData = slugSnap.data() as { invitationId: string; status: string };
+    if (!slugSnap.exists()) return { status: 'not-found', invitation: null };
+    const slugData = slugSnap.data() as {
+      invitationId: string;
+      ownerId?: string;
+      status: string;
+    };
+    if (slugData.status !== 'published' && slugData.ownerId !== viewerUid) {
+      return { status: 'draft', invitation: null };
+    }
     const invSnap = await getDoc(doc(db, 'invitations', slugData.invitationId));
-    if (!invSnap.exists()) return null;
-    return invSnap.data() as InvitationDoc;
+    if (!invSnap.exists()) return { status: 'not-found', invitation: null };
+    return { status: 'found', invitation: invSnap.data() as InvitationDoc };
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, slugPath);
   }

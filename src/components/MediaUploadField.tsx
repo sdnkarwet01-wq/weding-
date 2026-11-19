@@ -108,7 +108,7 @@ export function MediaUploadField({
             <input
               ref={inputRef}
               type="file"
-              accept={kind === 'image' ? 'image/jpeg,image/png,image/webp' : 'audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/mp4'}
+              accept={kind === 'image' ? 'image/jpeg,image/png,image/webp' : 'audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/mp4,audio/x-m4a,.m4a,.mp3'}
               onChange={handleFileChange}
               className="hidden"
             />

@@ -255,6 +255,44 @@ export function GuestManagerPage() {
     }
   };
 
+  const handleToggleSent = async (guest: GuestDoc, nextSent: boolean) => {
+    if (!invitation) return;
+    try {
+      await updateGuestRecord(guest.guestId, invitation.slug, {
+        invitationSent: nextSent,
+      });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update status.', 'error');
+    }
+  };
+
+  const handleDeleteGuest = async (guestId: string) => {
+    try {
+      await deleteGuestRecord(guestId);
+      showToast('Guest removed.', 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete guest.', 'error');
+    }
+  };
+
+  const handleDeleteRsvp = async (rsvpId: string) => {
+    try {
+      await deleteRsvpRecord(rsvpId);
+      showToast('RSVP record deleted.', 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete RSVP.', 'error');
+    }
+  };
+
+  const handleDeleteWish = async (wishId: string) => {
+    try {
+      await deleteWishRecord(wishId);
+      showToast('Wish removed from guestbook.', 'info');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to delete wish.', 'error');
+    }
+  };
+
   const handleExportCsv = () => {
     const header = 'Guest Name,Group,RSVP Status,Seat Count,Sent,Personalized URL';
     const lines = enrichedGuests.map((g) =>
@@ -509,11 +547,7 @@ export function GuestManagerPage() {
                             <td className="py-3 px-4 text-xs">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  void updateGuestRecord(g.guestId, invitation.slug, {
-                                    invitationSent: !g.invitationSent,
-                                  })
-                                }
+                                onClick={() => void handleToggleSent(g, !g.invitationSent)}
                                 className="underline text-[#737C68] hover:text-[#443C35]"
                               >
                                 {g.invitationSent ? 'Sent' : 'Not sent'}
@@ -539,9 +573,7 @@ export function GuestManagerPage() {
                                   rel="noopener noreferrer"
                                   onClick={() => {
                                     if (!g.invitationSent) {
-                                      void updateGuestRecord(g.guestId, invitation.slug, {
-                                        invitationSent: true,
-                                      });
+                                      void handleToggleSent(g, true);
                                     }
                                   }}
                                   title="Send via WhatsApp"
@@ -565,7 +597,7 @@ export function GuestManagerPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => void deleteGuestRecord(g.guestId)}
+                                  onClick={() => void handleDeleteGuest(g.guestId)}
                                   title="Delete guest"
                                   className="p-1.5 rounded-lg hover:bg-[#FDF2F2] text-[#8B3A3A]"
                                 >
@@ -624,7 +656,7 @@ export function GuestManagerPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => void deleteRsvpRecord(r.rsvpId)}
+                      onClick={() => void handleDeleteRsvp(r.rsvpId)}
                       title="Delete RSVP"
                       className="p-1.5 rounded-lg hover:bg-[#FDF2F2] text-[#8B3A3A]"
                     >
@@ -665,7 +697,7 @@ export function GuestManagerPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => void deleteWishRecord(w.wishId)}
+                      onClick={() => void handleDeleteWish(w.wishId)}
                       title="Delete wish"
                       className="p-1.5 rounded-lg hover:bg-[#FDF2F2] text-[#8B3A3A]"
                     >

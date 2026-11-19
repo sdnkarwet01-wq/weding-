@@ -9,13 +9,14 @@ export function PublicWeddingPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const guestName = searchParams.get('to') || searchParams.get('guest') || undefined;
-  const { user } = useAuth();
+  const { user, authReady } = useAuth();
 
   const [invitation, setInvitation] = useState<InvitationDoc | null>(null);
   const [loading, setLoading] = useState(true);
   const [notAvailableReason, setNotAvailableReason] = useState<'not-found' | 'draft' | null>(null);
 
   useEffect(() => {
+    if (!authReady) return;
     if (!slug) {
       setNotAvailableReason('not-found');
       setLoading(false);
@@ -26,20 +27,20 @@ export function PublicWeddingPage() {
     setLoading(true);
     setNotAvailableReason(null);
 
-    getPublicInvitationBySlug(slug)
-      .then((doc) => {
+    getPublicInvitationBySlug(slug, user?.uid)
+      .then((res) => {
         if (!mounted) return;
-        if (!doc) {
-          setNotAvailableReason('not-found');
-          setInvitation(null);
-        } else if (doc.status !== 'published' && doc.ownerId !== user?.uid) {
+        if (res.status === 'found' && res.invitation) {
+          setInvitation(res.invitation);
+          document.title = `${res.invitation.groomData.nickname || 'Groom'} & ${
+            res.invitation.brideData.nickname || 'Bride'
+          } — WEDLINK Invitation`;
+        } else if (res.status === 'draft') {
           setNotAvailableReason('draft');
           setInvitation(null);
         } else {
-          setInvitation(doc);
-          document.title = `${doc.groomData.nickname || 'Groom'} & ${
-            doc.brideData.nickname || 'Bride'
-          } — WEDLINK Invitation`;
+          setNotAvailableReason('not-found');
+          setInvitation(null);
         }
       })
       .catch(() => {
@@ -53,8 +54,9 @@ export function PublicWeddingPage() {
 
     return () => {
       mounted = false;
+      document.title = 'WEDLINK — Digital Wedding Invitation Studio';
     };
-  }, [slug, user?.uid]);
+  }, [slug, user?.uid, authReady]);
 
   if (loading) {
     return (

@@ -86,6 +86,8 @@ export function EditorPage() {
   // Step 6 music tester
   const musicTestRef = useRef<WeddingAudioController | null>(null);
   const [musicTesting, setMusicTesting] = useState(false);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const [galleryUrlInput, setGalleryUrlInput] = useState('');
 
   // Step 9 inline guest list
   const [guests, setGuests] = useState<GuestDoc[]>([]);
@@ -134,6 +136,12 @@ export function EditorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (step !== 6 || (inv && !inv.musicData.enabled)) {
+      musicTestRef.current?.pause();
+    }
+  }, [step, inv]);
+
   const updateInv = (updater: (prev: InvitationDoc) => InvitationDoc) => {
     setInv((prev) => {
       if (!prev) return prev;
@@ -146,11 +154,20 @@ export function EditorPage() {
   // Debounced autosave to Firestore
   useEffect(() => {
     if (!dirty || !inv) return;
-    const timer = window.setTimeout(async () => {
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+    const snapshotInv = inv;
+    const prevSlug = savedSlug;
+    autosaveTimerRef.current = window.setTimeout(async () => {
+      autosaveTimerRef.current = null;
       setSaving(true);
       try {
-        await saveInvitationChanges(inv, savedSlug);
-        setSavedSlug(inv.slug);
+        const canonicalSlug = await saveInvitationChanges(snapshotInv, prevSlug);
+        setSavedSlug(canonicalSlug);
+        if (snapshotInv.slug !== canonicalSlug) {
+          setInv((p) => (p && p.slug === snapshotInv.slug ? { ...p, slug: canonicalSlug } : p));
+        }
         setDirty(false);
         setSlugError(null);
         setLastSavedText(
@@ -167,16 +184,28 @@ export function EditorPage() {
       }
     }, 1600);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      if (autosaveTimerRef.current !== null) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
   }, [dirty, inv, savedSlug]);
 
   const handleManualSave = async () => {
     if (!inv) return;
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
     setSaving(true);
     setSlugError(null);
     try {
-      await saveInvitationChanges(inv, savedSlug);
-      setSavedSlug(inv.slug);
+      const canonicalSlug = await saveInvitationChanges(inv, savedSlug);
+      setSavedSlug(canonicalSlug);
+      if (inv.slug !== canonicalSlug) {
+        setInv((p) => (p ? { ...p, slug: canonicalSlug } : p));
+      }
       setDirty(false);
       setLastSavedText('Saved to cloud');
       showToast('Draft saved to Firestore.', 'success');
@@ -191,23 +220,33 @@ export function EditorPage() {
 
   const handleTogglePublish = async () => {
     if (!inv) return;
+    if (autosaveTimerRef.current !== null) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
     setSaving(true);
+    setSlugError(null);
     try {
-      if (dirty) {
-        await saveInvitationChanges(inv, savedSlug);
-        setSavedSlug(inv.slug);
+      let currentInv = inv;
+      if (dirty || inv.slug !== savedSlug) {
+        const canonicalSlug = await saveInvitationChanges(inv, savedSlug);
+        setSavedSlug(canonicalSlug);
+        currentInv = { ...inv, slug: canonicalSlug };
+        setInv((p) => (p ? { ...p, slug: canonicalSlug } : p));
         setDirty(false);
       }
-      const nextStatus = await toggleInvitationStatus(inv);
+      const nextStatus = await toggleInvitationStatus(currentInv);
       setInv((prev) => (prev ? { ...prev, status: nextStatus } : prev));
       showToast(
         nextStatus === 'published'
-          ? `Invitation published! Public link active at /wedding/${inv.slug}`
+          ? `Invitation published! Public link active at /wedding/${currentInv.slug}`
           : 'Invitation unpublished (returned to Draft).',
         'success'
       );
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Publish failed.', 'error');
+      const msg = err instanceof Error ? err.message : 'Publish failed.';
+      if (msg.toLowerCase().includes('slug')) setSlugError(msg);
+      showToast(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -1104,6 +1143,34 @@ export function EditorPage() {
                   </button>
                 </div>
 
+                {inv.gallery.length < 20 && (
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={galleryUrlInput}
+                      onChange={(e) => setGalleryUrlInput(e.target.value)}
+                      placeholder="Or paste image URL (https://...)"
+                      className="flex-1 px-3 py-2 text-xs bg-white border border-[#DCD3C6] rounded-lg focus:outline-none focus:border-[#737C68]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const clean = galleryUrlInput.trim();
+                        if (!clean) return;
+                        updateInv((p) => ({
+                          ...p,
+                          gallery: [...p.gallery, clean].slice(0, 20),
+                        }));
+                        setGalleryUrlInput('');
+                        showToast('Gallery image URL added.', 'success');
+                      }}
+                      className="px-3.5 py-2 text-xs font-medium border border-[#DCD3C6] rounded-lg hover:bg-[#FAF7F2] whitespace-nowrap shrink-0"
+                    >
+                      Add URL
+                    </button>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   {inv.gallery.map((url, idx) => (
                     <div
@@ -1542,8 +1609,12 @@ export function EditorPage() {
                             <button
                               type="button"
                               onClick={async () => {
-                                await navigator.clipboard.writeText(url);
-                                showToast('Guest link copied.', 'success');
+                                try {
+                                  await navigator.clipboard.writeText(url);
+                                  showToast('Guest link copied.', 'success');
+                                } catch {
+                                  showToast('Could not copy link automatically.', 'error');
+                                }
                               }}
                               className="p-1.5 rounded hover:bg-[#FAF7F2]"
                               title="Copy link"
@@ -1605,8 +1676,12 @@ export function EditorPage() {
                       <button
                         type="button"
                         onClick={async () => {
-                          await navigator.clipboard.writeText(publicUrl);
-                          showToast('Public link copied!', 'success');
+                          try {
+                            await navigator.clipboard.writeText(publicUrl);
+                            showToast('Public link copied!', 'success');
+                          } catch {
+                            showToast('Could not copy link automatically.', 'error');
+                          }
                         }}
                         className="px-3 py-2 bg-white border border-[#DCD3C6] text-xs rounded-lg hover:bg-[#F1EAE0]"
                       >

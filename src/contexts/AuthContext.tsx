@@ -19,6 +19,7 @@ import { sanitizeText } from '../utils/sanitize';
 interface AuthContextValue {
   user: User | null;
   profile: UserProfileDoc | null;
+  isEmailVerified: boolean;
   loading: boolean;
   authReady: boolean;
   signInWithGoogle: () => Promise<User>;
@@ -42,6 +43,7 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfileDoc | null>(null);
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
 
@@ -97,6 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      setIsEmailVerified(Boolean(currentUser?.emailVerified));
       if (currentUser && currentUser.emailVerified) {
         try {
           await syncProfileToFirestore(currentUser);
@@ -157,8 +160,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await auth.currentUser.reload();
     await auth.currentUser.getIdToken(true);
     const refreshed = auth.currentUser;
+    const verified = Boolean(refreshed.emailVerified);
     setUser(refreshed);
-    if (refreshed.emailVerified) {
+    setIsEmailVerified(verified);
+    if (verified) {
       await syncProfileToFirestore(refreshed);
       return true;
     }
@@ -175,6 +180,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async (): Promise<void> => {
     await signOut(auth);
+    setIsEmailVerified(false);
     setProfile(null);
   };
 
@@ -183,6 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{
         user,
         profile,
+        isEmailVerified,
         loading,
         authReady,
         signInWithGoogle,

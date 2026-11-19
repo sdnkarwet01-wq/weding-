@@ -19,7 +19,12 @@ import {
 import { getTemplateById } from '../data/templates';
 import { InvitationDoc, WishDoc } from '../types/wedding';
 import { WeddingAudioController } from '../utils/audioEngine';
-import { downloadCalendarIcs, formatReadableDate, isValidHttpOrLocalUrl } from '../utils/sanitize';
+import {
+  downloadCalendarIcs,
+  formatReadableDate,
+  getTimezoneMeta,
+  isValidHttpOrLocalUrl,
+} from '../utils/sanitize';
 import { fetchPublicWishes, submitPublicRsvp, submitPublicWish, toMillis } from '../services/weddingService';
 import { BotanicalOrnament } from './BotanicalOrnament';
 import { ResilientImage } from './ResilientImage';
@@ -41,11 +46,11 @@ interface CountdownValues {
   passed: boolean;
 }
 
-function computeJakartaCountdown(dateStr: string, timeStr: string): CountdownValues {
+function computeCountdown(dateStr: string, timeStr: string, offset: string): CountdownValues {
   if (!dateStr) {
     return { days: 0, hours: 0, minutes: 0, seconds: 0, passed: false };
   }
-  const targetIso = `${dateStr}T${timeStr || '09:00'}:00+07:00`;
+  const targetIso = `${dateStr}T${timeStr || '09:00'}:00${offset}`;
   const targetMs = new Date(targetIso).getTime();
   if (Number.isNaN(targetMs)) {
     return { days: 0, hours: 0, minutes: 0, seconds: 0, passed: false };
@@ -69,6 +74,10 @@ export function InvitationRenderer({
   defaultOpened = false,
 }: InvitationRendererProps) {
   const template = useMemo(() => getTemplateById(invitation.templateId), [invitation.templateId]);
+  const tzMeta = useMemo(
+    () => getTimezoneMeta(invitation.eventData.timezone),
+    [invitation.eventData.timezone]
+  );
   const { showToast } = useToast();
 
   // Opening cover state (starts closed on live/preview; smooth open triggers music)
@@ -78,30 +87,32 @@ export function InvitationRenderer({
     setOpened(defaultOpened);
   }, [defaultOpened]);
 
-  // Countdown timer
+  // Countdown timer synchronized with selected Indonesian timezone
   const targetDate = invitation.eventData.akad.date || invitation.eventData.reception.date;
   const targetTime = invitation.eventData.akad.startTime || invitation.eventData.reception.startTime;
   const [countdown, setCountdown] = useState<CountdownValues>(() =>
-    computeJakartaCountdown(targetDate, targetTime)
+    computeCountdown(targetDate, targetTime, tzMeta.offset)
   );
 
   useEffect(() => {
-    setCountdown(computeJakartaCountdown(targetDate, targetTime));
+    setCountdown(computeCountdown(targetDate, targetTime, tzMeta.offset));
     const timer = window.setInterval(() => {
-      setCountdown(computeJakartaCountdown(targetDate, targetTime));
+      setCountdown(computeCountdown(targetDate, targetTime, tzMeta.offset));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [targetDate, targetTime]);
+  }, [targetDate, targetTime, tzMeta.offset]);
 
   // Audio player state
   const audioCtrlRef = useRef<WeddingAudioController | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const isPlayingRef = useRef(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const [volume, setVolume] = useState<number>(invitation.musicData.volume ?? 0.65);
   const [showVolume, setShowVolume] = useState(false);
 
   useEffect(() => {
     const ctrl = new WeddingAudioController((playing, err) => {
+      isPlayingRef.current = playing;
       setIsPlaying(playing);
       setAudioError(err);
     });
@@ -112,11 +123,22 @@ export function InvitationRenderer({
     };
   }, []);
 
+  const volumeRef = useRef<number>(invitation.musicData.volume ?? 0.65);
+
   useEffect(() => {
     const v = invitation.musicData.volume ?? 0.65;
+    volumeRef.current = v;
     setVolume(v);
     audioCtrlRef.current?.setVolume(v);
   }, [invitation.musicData.volume]);
+
+  useEffect(() => {
+    if (!invitation.musicData.enabled) {
+      audioCtrlRef.current?.pause();
+    } else if (isPlayingRef.current && invitation.musicData.url && audioCtrlRef.current) {
+      void audioCtrlRef.current.play(invitation.musicData.url, volumeRef.current);
+    }
+  }, [invitation.musicData.enabled, invitation.musicData.url]);
 
   const handleOpenInvitation = () => {
     setOpened(true);
@@ -170,11 +192,26 @@ export function InvitationRenderer({
   const [rsvpError, setRsvpError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (lightboxIdx !== null && lightboxIdx >= invitation.gallery.length) {
+      setLightboxIdx(null);
+    }
+  }, [lightboxIdx, invitation.gallery.length]);
+
+  useEffect(() => {
     if (guestName) {
       setRsvpName(guestName);
       setWishName(guestName);
     }
   }, [guestName]);
+
+  useEffect(() => {
+    setRsvpSubmitted(false);
+    setRsvpError(null);
+    setWishes([]);
+    setVisibleWishLimit(6);
+    setLightboxIdx(null);
+    setShowQrisModal(false);
+  }, [invitation.invitationId]);
 
   const handleRsvpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,9 +221,12 @@ export function InvitationRenderer({
       return;
     }
 
-    if (isPreview && invitation.status !== 'published') {
+    if (invitation.status !== 'published') {
       setRsvpSubmitted(true);
-      showToast('Preview RSVP recorded locally. Publish invitation to collect real guest RSVPs.', 'info');
+      showToast(
+        'Draft preview RSVP recorded locally. Publish invitation to collect real guest RSVPs.',
+        'info'
+      );
       return;
     }
 
@@ -249,7 +289,7 @@ export function InvitationRenderer({
       return;
     }
 
-    if (isPreview && invitation.status !== 'published') {
+    if (invitation.status !== 'published') {
       const demoWish: WishDoc = {
         wishId: `preview_${Date.now()}`,
         invitationId: invitation.invitationId,
@@ -261,7 +301,10 @@ export function InvitationRenderer({
       };
       setWishes((prev) => [demoWish, ...prev]);
       setWishText('');
-      showToast('Preview wish added. Publish invitation to persist guest wishes.', 'info');
+      showToast(
+        'Draft preview wish added locally. Publish invitation to persist guest wishes.',
+        'info'
+      );
       return;
     }
 
@@ -696,7 +739,7 @@ export function InvitationRenderer({
                     </h3>
                     <p className="text-sm font-medium tabular-nums" style={{ color: template.textMuted }}>
                       {ev.data.startTime || '09:00'}
-                      {ev.data.endTime ? ` — ${ev.data.endTime}` : ''} WIB
+                      {ev.data.endTime ? ` — ${ev.data.endTime}` : ''} {tzMeta.abbr}
                     </p>
                     <div className="pt-3 border-t" style={{ borderColor: template.border }}>
                       <p className="font-medium text-base">{ev.data.venue}</p>
@@ -730,6 +773,7 @@ export function InvitationRenderer({
                           date: ev.data.date,
                           startTime: ev.data.startTime,
                           endTime: ev.data.endTime,
+                          timezone: invitation.eventData.timezone,
                           venue: ev.data.venue,
                           address: ev.data.address,
                           description: `Wedding celebration of ${groomNick} & ${brideNick}`,

@@ -77,7 +77,6 @@ export class WeddingAudioController {
       if (!this.audioEl) {
         this.audioEl = new Audio(url);
         this.audioEl.loop = true;
-        this.audioEl.crossOrigin = 'anonymous';
         this.audioEl.addEventListener('error', () => {
           this.playing = false;
           this.onStateChange?.(false, 'Unable to stream audio URL. Switching controls remain safe.');

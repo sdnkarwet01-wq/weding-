@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   CalendarHeart,
@@ -132,13 +132,24 @@ const SAMPLE_TESTIMONIALS = [
 ];
 
 export function LandingPage() {
-  const { user } = useAuth();
+  const { user, isEmailVerified } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { showToast } = useToast();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [previewTemplate, setPreviewTemplate] = useState<TemplateConfig | null>(null);
   const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('mobile');
   const [creatingTemplateId, setCreatingTemplateId] = useState<TemplateId | null>(null);
+
+  useEffect(() => {
+    if (location.hash) {
+      const targetId = location.hash.slice(1);
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  }, [location.hash]);
 
   const previewInvitationDoc = useMemo(() => {
     if (!previewTemplate) return null;
@@ -151,7 +162,7 @@ export function LandingPage() {
       navigate(`/auth?mode=signup&template=${templateId}`);
       return;
     }
-    if (!user.emailVerified) {
+    if (!isEmailVerified) {
       navigate('/dashboard');
       return;
     }

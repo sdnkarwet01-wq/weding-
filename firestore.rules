@@ -317,11 +317,7 @@ service cloud.firestore {
     // Collection: /slugs/{slug}
     // -------------------------------------------------------------------------
     match /slugs/{slug} {
-      allow get: if isValidSlug(slug) && (
-        resource == null ||
-        existing().status == 'published' ||
-        (isVerifiedUser() && existing().ownerId == request.auth.uid)
-      );
+      allow get: if isValidSlug(slug);
       allow list: if false;
 
       allow create: if isValidSlug(slug)

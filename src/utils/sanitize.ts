@@ -114,15 +114,33 @@ export function parseCsvGuestRows(rawText: string): Array<{ guestName: string; g
   return results;
 }
 
+export interface TimezoneMeta {
+  iana: 'Asia/Jakarta' | 'Asia/Makassar' | 'Asia/Jayapura';
+  offset: '+07:00' | '+08:00' | '+09:00';
+  abbr: 'WIB' | 'WITA' | 'WIT';
+}
+
+export function getTimezoneMeta(tz?: string): TimezoneMeta {
+  if (tz === 'Asia/Makassar') {
+    return { iana: 'Asia/Makassar', offset: '+08:00', abbr: 'WITA' };
+  }
+  if (tz === 'Asia/Jayapura') {
+    return { iana: 'Asia/Jayapura', offset: '+09:00', abbr: 'WIT' };
+  }
+  return { iana: 'Asia/Jakarta', offset: '+07:00', abbr: 'WIB' };
+}
+
 export function downloadCalendarIcs(params: {
   title: string;
   date: string;
   startTime: string;
   endTime?: string;
+  timezone?: string;
   venue: string;
   address: string;
   description: string;
 }) {
+  const tzMeta = getTimezoneMeta(params.timezone);
   const cleanDate = (params.date || '2027-06-19').replace(/-/g, '');
   const start = (params.startTime || '09:00').replace(':', '') + '00';
   const end = (params.endTime || '12:00').replace(':', '') + '00';
@@ -133,8 +151,8 @@ export function downloadCalendarIcs(params: {
     'BEGIN:VEVENT',
     `UID:wedlink-${Date.now()}@wedlink.studio`,
     `DTSTAMP:${cleanDate}T${start}`,
-    `DTSTART;TZID=Asia/Jakarta:${cleanDate}T${start}`,
-    `DTEND;TZID=Asia/Jakarta:${cleanDate}T${end}`,
+    `DTSTART;TZID=${tzMeta.iana}:${cleanDate}T${start}`,
+    `DTEND;TZID=${tzMeta.iana}:${cleanDate}T${end}`,
     `SUMMARY:${params.title}`,
     `LOCATION:${params.venue}, ${params.address}`,
     `DESCRIPTION:${params.description}`,

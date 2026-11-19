@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Mail, Lock, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,12 +23,14 @@ export function AuthPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
 
-  const { user, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } = useAuth();
+  const { user, isEmailVerified, signInWithGoogle, signInWithEmail, signUpWithEmail, resetPassword } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const redirectingRef = useRef(false);
 
   useEffect(() => {
-    if (user && user.emailVerified && !submitting) {
+    if (user && isEmailVerified && !submitting && !redirectingRef.current) {
+      redirectingRef.current = true;
       if (requestedTemplate) {
         void (async () => {
           try {
@@ -42,13 +44,14 @@ export function AuthPage() {
         navigate('/dashboard', { replace: true });
       }
     }
-  }, [user, requestedTemplate, navigate, submitting]);
+  }, [user, isEmailVerified, requestedTemplate, navigate, submitting]);
 
   const handleGoogle = async () => {
     setErrorMsg(null);
     setSubmitting(true);
     try {
       const signedIn = await signInWithGoogle();
+      redirectingRef.current = true;
       showToast('Signed in to WEDLINK Studio.', 'success');
       if (requestedTemplate) {
         const created = await createNewInvitation(signedIn.uid, requestedTemplate);
@@ -57,6 +60,7 @@ export function AuthPage() {
         navigate('/dashboard', { replace: true });
       }
     } catch (err) {
+      redirectingRef.current = false;
       const msg = err instanceof Error ? err.message : 'Google Sign-In failed.';
       setErrorMsg(msg);
     } finally {
@@ -92,6 +96,7 @@ export function AuthPage() {
         navigate('/dashboard', { replace: true });
       } else {
         const signedIn = await signInWithEmail(email, password);
+        redirectingRef.current = true;
         if (signedIn.emailVerified && requestedTemplate) {
           const created = await createNewInvitation(signedIn.uid, requestedTemplate);
           navigate(`/editor/${created.invitationId}`, { replace: true });
@@ -100,6 +105,7 @@ export function AuthPage() {
         }
       }
     } catch (err) {
+      redirectingRef.current = false;
       const raw = err instanceof Error ? err.message : String(err);
       if (raw.includes('auth/operation-not-allowed')) {
         setErrorMsg(
