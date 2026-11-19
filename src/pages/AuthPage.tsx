@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Mail, Lock, User as UserIcon } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Lock, Mail, User as UserIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { createNewInvitation } from '../services/weddingService';
@@ -46,8 +46,12 @@ export function AuthPage() {
     }
   }, [user, isEmailVerified, requestedTemplate, navigate, submitting]);
 
+  const isInIframe = typeof window !== 'undefined' && window.self !== window.top;
+  const [showNewTabHint, setShowNewTabHint] = useState(false);
+
   const handleGoogle = async () => {
     setErrorMsg(null);
+    setShowNewTabHint(false);
     setSubmitting(true);
     try {
       const signedIn = await signInWithGoogle();
@@ -61,8 +65,50 @@ export function AuthPage() {
       }
     } catch (err) {
       redirectingRef.current = false;
-      const msg = err instanceof Error ? err.message : 'Google Sign-In failed.';
-      setErrorMsg(msg);
+      const raw = err instanceof Error ? err.message : String(err);
+      const code = (err as { code?: string })?.code || '';
+      const host = typeof window !== 'undefined' ? window.location.hostname : '';
+
+      if (code === 'auth/popup-blocked' || raw.includes('auth/popup-blocked')) {
+        setErrorMsg(
+          'Popup Google Login diblokir oleh browser atau frame pratinjau. Izinkan popup untuk situs ini atau buka halaman login di tab baru.'
+        );
+        setShowNewTabHint(true);
+      } else if (
+        code === 'auth/popup-closed-by-user' ||
+        raw.includes('auth/popup-closed-by-user') ||
+        code === 'auth/cancelled-popup-request' ||
+        raw.includes('auth/cancelled-popup-request')
+      ) {
+        setErrorMsg(
+          'Jendela Google Login ditutup sebelum selesai. Silakan coba lagi atau buka di tab baru jika diblokir oleh pratinjau.'
+        );
+        if (isInIframe) setShowNewTabHint(true);
+      } else if (code === 'auth/unauthorized-domain' || raw.includes('auth/unauthorized-domain')) {
+        setErrorMsg(
+          `Domain "${host}" belum terdaftar di Firebase Authorized Domains. Tambahkan "${host}" di Firebase Console → Authentication → Settings → Authorized domains.`
+        );
+      } else if (code === 'auth/operation-not-allowed' || raw.includes('auth/operation-not-allowed')) {
+        setErrorMsg(
+          'Google Sign-In belum aktif di Firebase Console (Authentication → Sign-in method → Google).'
+        );
+      } else if (
+        code === 'auth/network-request-failed' ||
+        raw.includes('auth/network-request-failed') ||
+        code === 'auth/internal-error' ||
+        raw.includes('auth/internal-error')
+      ) {
+        setErrorMsg(
+          'Koneksi Google Sign-In gagal atau cookie pihak ketiga diblokir di frame pratinjau. Coba buka studio di tab baru.'
+        );
+        setShowNewTabHint(true);
+      } else if (raw.startsWith('{') && raw.includes('Missing or insufficient permissions')) {
+        setErrorMsg(
+          'Login berhasil tetapi gagal menyinkronkan profil studio ke database. Silakan muat ulang atau coba klik lagi.'
+        );
+      } else {
+        setErrorMsg(raw || 'Google Sign-In failed.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -157,20 +203,34 @@ export function AuthPage() {
         {/* Google Sign-In (configured natively by ProvisionFirebase) */}
         {mode !== 'reset' && (
           <>
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={handleGoogle}
-              className="w-full py-2.5 px-4 bg-[#443C35] text-[#FAF7F2] text-sm font-medium rounded-lg hover:bg-[#5A5047] transition-colors flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
-                <path
-                  fill="currentColor"
-                  d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81Z"
-                />
-              </svg>
-              <span>Continue with Google</span>
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={handleGoogle}
+                className="w-full py-2.5 px-4 bg-[#443C35] text-[#FAF7F2] text-sm font-medium rounded-lg hover:bg-[#5A5047] transition-colors flex items-center justify-center gap-2.5 cursor-pointer disabled:opacity-60"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M21.35 11.1h-9.17v2.73h6.51c-.33 3.81-3.5 5.44-6.5 5.44C8.36 19.27 5 16.25 5 12c0-4.1 3.2-7.27 7.2-7.27 3.09 0 4.9 1.97 4.9 1.97L19 4.72S16.56 2 12.1 2C6.42 2 2.03 6.8 2.03 12c0 5.05 4.13 10 10.22 10 5.35 0 9.25-3.67 9.25-9.09 0-1.15-.15-1.81-.15-1.81Z"
+                  />
+                </svg>
+                <span>{submitting ? 'Signing in...' : 'Continue with Google'}</span>
+              </button>
+
+              {(isInIframe || showNewTabHint) && (
+                <a
+                  href={typeof window !== 'undefined' ? window.location.href : '/auth'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-2 px-3 rounded-lg border border-[#E5DDD0] bg-[#FAF7F2] text-[11px] text-[#443C35]/80 hover:text-[#443C35] hover:bg-[#F1EAE0] transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Login in New Tab (if popup blocked)</span>
+                </a>
+              )}
+            </div>
 
             <div className="relative flex items-center justify-center">
               <div className="border-t border-[#E5DDD0] w-full" />

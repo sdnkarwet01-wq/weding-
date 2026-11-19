@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
@@ -46,54 +46,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isEmailVerified, setIsEmailVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [authReady, setAuthReady] = useState(false);
+  const syncLockRef = useRef<Map<string, Promise<void>>>(new Map());
 
   const syncProfileToFirestore = useCallback(async (firebaseUser: User, explicitName?: string) => {
     if (!firebaseUser.emailVerified) {
       return;
     }
-    const userRef = doc(db, 'users', firebaseUser.uid);
-    const path = `users/${firebaseUser.uid}`;
-    try {
-      const snap = await getDoc(userRef);
-      const safeName = sanitizeText(
-        explicitName || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Studio Host',
-        100
-      );
-      const safeEmail = sanitizeText(firebaseUser.email || '', 200);
-      const safePhoto = sanitizeText(firebaseUser.photoURL || '', 1000);
 
-      if (!snap.exists()) {
-        const newProfile: UserProfileDoc = {
-          userId: firebaseUser.uid,
-          name: safeName,
-          email: safeEmail,
-          ...(safePhoto ? { photoUrl: safePhoto } : {}),
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        };
-        await setDoc(userRef, newProfile);
-        setProfile(newProfile);
-      } else {
-        const existingData = snap.data() as UserProfileDoc;
-        if (explicitName && explicitName !== existingData.name) {
-          await setDoc(
-            userRef,
-            {
-              name: safeName,
-              email: safeEmail,
-              ...(safePhoto ? { photoUrl: safePhoto } : {}),
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
-          setProfile({ ...existingData, name: safeName, email: safeEmail });
-        } else {
-          setProfile(existingData);
-        }
+    const existingFlight = syncLockRef.current.get(firebaseUser.uid);
+    if (existingFlight) {
+      if (!explicitName) {
+        await existingFlight;
+        return;
       }
-    } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, path);
+      await existingFlight.catch(() => {});
     }
+
+    const runSync = async () => {
+      const userRef = doc(db, 'users', firebaseUser.uid);
+      const path = `users/${firebaseUser.uid}`;
+      try {
+        const snap = await getDoc(userRef);
+        const safeName =
+          sanitizeText(
+            explicitName || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Studio Host',
+            100
+          ) || 'Studio Host';
+        const rawEmail = firebaseUser.email || `${firebaseUser.uid.slice(0, 10)}@wedlink.local`;
+        const safeEmail = sanitizeText(rawEmail, 200);
+        const safePhoto = sanitizeText(firebaseUser.photoURL || '', 1000);
+
+        if (!snap.exists()) {
+          const newProfile: UserProfileDoc = {
+            userId: firebaseUser.uid,
+            name: safeName,
+            email: safeEmail.length >= 3 ? safeEmail : `${firebaseUser.uid.slice(0, 10)}@wedlink.local`,
+            ...(safePhoto ? { photoUrl: safePhoto } : {}),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          await setDoc(userRef, newProfile);
+          setProfile(newProfile);
+        } else {
+          const existingData = snap.data() as UserProfileDoc;
+          if (explicitName && explicitName !== existingData.name) {
+            await setDoc(
+              userRef,
+              {
+                name: safeName,
+                email: safeEmail.length >= 3 ? safeEmail : existingData.email,
+                ...(safePhoto ? { photoUrl: safePhoto } : {}),
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+            setProfile({ ...existingData, name: safeName, email: safeEmail });
+          } else {
+            setProfile(existingData);
+          }
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, path);
+      }
+    };
+
+    const promise = runSync().finally(() => {
+      if (syncLockRef.current.get(firebaseUser.uid) === promise) {
+        syncLockRef.current.delete(firebaseUser.uid);
+      }
+    });
+    syncLockRef.current.set(firebaseUser.uid, promise);
+    await promise;
   }, []);
 
   useEffect(() => {
