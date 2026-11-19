@@ -1,11 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  getRedirectResult,
+  GoogleAuthProvider,
   onAuthStateChanged,
   sendEmailVerification,
   sendPasswordResetEmail,
+  signInWithCredential,
   signInWithEmailAndPassword,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   updateProfile,
   User,
@@ -23,6 +27,8 @@ interface AuthContextValue {
   loading: boolean;
   authReady: boolean;
   signInWithGoogle: () => Promise<User>;
+  signInWithGoogleCredential: (idToken: string) => Promise<User>;
+  signInWithGoogleRedirect: () => Promise<void>;
   signUpWithEmail: (name: string, email: string, password: string) => Promise<User>;
   signInWithEmail: (email: string, password: string) => Promise<User>;
   resetPassword: (email: string) => Promise<void>;
@@ -65,7 +71,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const runSync = async () => {
       const userRef = doc(db, 'users', firebaseUser.uid);
       const path = `users/${firebaseUser.uid}`;
-      try {
+
+      const attemptSync = async () => {
         const snap = await getDoc(userRef);
         const safeName =
           sanitizeText(
@@ -105,8 +112,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(existingData);
           }
         }
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, path);
+      };
+
+      try {
+        await attemptSync();
+      } catch (firstErr) {
+        // Retry once after ensuring auth ID token is freshly attached to Firestore
+        try {
+          await firebaseUser.getIdToken(true);
+          await new Promise((r) => setTimeout(r, 350));
+          await attemptSync();
+        } catch (err) {
+          handleFirestoreError(err || firstErr, OperationType.WRITE, path);
+        }
       }
     };
 
@@ -120,6 +138,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    void getRedirectResult(auth)
+      .then(async (result) => {
+        if (result?.user) {
+          await result.user.getIdToken();
+          await syncProfileToFirestore(result.user).catch(() => {});
+        }
+      })
+      .catch(() => {
+        // Redirect result not pending or already handled
+      });
+
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       setIsEmailVerified(Boolean(currentUser?.emailVerified));
@@ -140,8 +169,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (): Promise<User> => {
     const result = await signInWithPopup(auth, googleProvider);
-    await syncProfileToFirestore(result.user);
+    await result.user.getIdToken();
+    try {
+      await syncProfileToFirestore(result.user);
+    } catch {
+      // Do not block authenticated Google session if Firestore profile sync hits a transient hiccup
+    }
     return result.user;
+  };
+
+  const signInWithGoogleCredential = async (idToken: string): Promise<User> => {
+    const credential = GoogleAuthProvider.credential(idToken);
+    const result = await signInWithCredential(auth, credential);
+    await result.user.getIdToken();
+    try {
+      await syncProfileToFirestore(result.user);
+    } catch {
+      // Do not block authenticated Google session if Firestore profile sync hits a transient hiccup
+    }
+    return result.user;
+  };
+
+  const signInWithGoogleRedirect = async (): Promise<void> => {
+    await signInWithRedirect(auth, googleProvider);
   };
 
   const signUpWithEmail = async (name: string, email: string, password: string): Promise<User> => {
@@ -216,6 +266,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         authReady,
         signInWithGoogle,
+        signInWithGoogleCredential,
+        signInWithGoogleRedirect,
         signUpWithEmail,
         signInWithEmail,
         resetPassword,
