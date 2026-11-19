@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --wedlink-ivory: #FAF7F2;
+    --wedlink-cream: #F1EAE0;
+    --wedlink-sage: #A4AD9B;
+    --wedlink-olive: #737C68;
+    --wedlink-champagne: #C6AC83;
+    --wedlink-brown: #443C35;
+    --wedlink-white: #FFFFFF;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #FAF7F2;
+    color: #443C35;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+.font-cormorant {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+}
+
+.font-playfair {
+  font-family: 'Playfair Display', Georgia, serif;
+}
+
+.font-dm-serif {
+  font-family: 'DM Serif Display', Georgia, serif;
+}
+
+.font-dm-sans {
+  font-family: 'DM Sans', sans-serif;
+}
+
+.font-manrope {
+  font-family: 'Manrope', sans-serif;
+}
+
+.font-mono-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes slowSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-disc-spin {
+  animation: slowSpin 9s linear infinite;
+}
+
+@keyframes eqBar {
+  0%, 100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.eq-bar-1 {
+  animation: eqBar 0.8s ease-in-out infinite;
+  transform-origin: bottom;
+}
+.eq-bar-2 {
+  animation: eqBar 0.6s ease-in-out 0.15s infinite;
+  transform-origin: bottom;
+}
+.eq-bar-3 {
+  animation: eqBar 0.9s ease-in-out 0.3s infinite;
+  transform-origin: bottom;
+}

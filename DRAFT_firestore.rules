@@ -1,0 +1,449 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------------------
+    // Global Safety Net (Default Deny)
+    // -------------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Reusable Hardened Primitives
+    // -------------------------------------------------------------------------
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSlug(slug) {
+      return slug is string && slug.size() >= 3 && slug.size() <= 80 && slug.matches('^[a-z0-9-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(uid) {
+      return isVerifiedUser() && request.auth.uid == uid;
+    }
+
+    function isValidTemplateId(t) {
+      return t in [
+        'eternal-bloom',
+        'the-tuscany',
+        'sage-soul',
+        'golden-hour',
+        'pure-elegance',
+        'floral-whisper',
+        'modern-muse',
+        'the-grand-affair'
+      ];
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['userId', 'name', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'name', 'email', 'photoUrl', 'createdAt', 'updatedAt'])
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 1000))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPersonMap(p) {
+      return p is map
+        && p.keys().hasAll(['fullName', 'nickname', 'parents', 'photoUrl'])
+        && p.keys().hasOnly(['fullName', 'nickname', 'parents', 'photoUrl', 'instagram'])
+        && p.fullName is string && p.fullName.size() <= 100
+        && p.nickname is string && p.nickname.size() <= 50
+        && p.parents is string && p.parents.size() <= 200
+        && p.photoUrl is string && p.photoUrl.size() <= 1000
+        && (!('instagram' in p) || (p.instagram is string && p.instagram.size() <= 80));
+    }
+
+    function isValidEventSubMap(e) {
+      return e is map
+        && e.keys().hasAll(['date', 'startTime', 'venue', 'address', 'mapsUrl'])
+        && e.keys().hasOnly(['date', 'startTime', 'endTime', 'venue', 'address', 'mapsUrl'])
+        && e.date is string && e.date.size() <= 40
+        && e.startTime is string && e.startTime.size() <= 20
+        && (!('endTime' in e) || (e.endTime is string && e.endTime.size() <= 20))
+        && e.venue is string && e.venue.size() <= 150
+        && e.address is string && e.address.size() <= 300
+        && e.mapsUrl is string && e.mapsUrl.size() <= 500;
+    }
+
+    function isValidEventData(ev) {
+      return ev is map
+        && ev.keys().hasAll(['timezone', 'akad', 'reception'])
+        && ev.keys().hasOnly(['timezone', 'akad', 'reception'])
+        && ev.timezone is string && ev.timezone.size() <= 60
+        && isValidEventSubMap(ev.akad)
+        && isValidEventSubMap(ev.reception);
+    }
+
+    function isValidStoryData(st) {
+      return st is map
+        && st.keys().hasAll(['quote', 'openingMessage', 'milestones'])
+        && st.keys().hasOnly(['quote', 'quoteSource', 'openingMessage', 'milestones'])
+        && st.quote is string && st.quote.size() <= 500
+        && (!('quoteSource' in st) || (st.quoteSource is string && st.quoteSource.size() <= 120))
+        && st.openingMessage is string && st.openingMessage.size() <= 1000
+        && st.milestones is list && st.milestones.size() <= 10
+        && (st.milestones.size() == 0 || (st.milestones[0] is map && st.milestones[0].keys().hasOnly(['id', 'title', 'date', 'description', 'photoUrl'])));
+    }
+
+    function isValidGallery(gal) {
+      return gal is list
+        && gal.size() <= 20
+        && (gal.size() == 0 || (gal[0] is string && gal[0].size() <= 1000));
+    }
+
+    function isValidMusicData(m) {
+      return m is map
+        && m.keys().hasAll(['enabled', 'title', 'artist', 'url', 'volume'])
+        && m.keys().hasOnly(['enabled', 'title', 'artist', 'url', 'volume'])
+        && m.enabled is bool
+        && m.title is string && m.title.size() <= 120
+        && m.artist is string && m.artist.size() <= 120
+        && m.url is string && m.url.size() <= 1000
+        && m.volume is number && m.volume >= 0 && m.volume <= 1;
+    }
+
+    function isValidEnabledSections(s) {
+      return s is map
+        && s.keys().hasAll(['couple', 'story', 'countdown', 'gallery', 'rsvp', 'wishes', 'event', 'gift'])
+        && s.keys().hasOnly(['couple', 'story', 'countdown', 'gallery', 'rsvp', 'wishes', 'event', 'gift'])
+        && s.couple is bool && s.story is bool && s.countdown is bool && s.gallery is bool
+        && s.rsvp is bool && s.wishes is bool && s.event is bool && s.gift is bool;
+    }
+
+    function isValidGiftData(g) {
+      return g is map
+        && g.keys().hasAll(['message', 'qrisUrl', 'accounts'])
+        && g.keys().hasOnly(['message', 'qrisUrl', 'accounts'])
+        && g.message is string && g.message.size() <= 400
+        && g.qrisUrl is string && g.qrisUrl.size() <= 1000
+        && g.accounts is list && g.accounts.size() <= 6
+        && (g.accounts.size() == 0 || (g.accounts[0] is map && g.accounts[0].keys().hasOnly(['id', 'bankName', 'accountNumber', 'accountHolder'])));
+    }
+
+    function isValidInvitation(data, invitationId) {
+      return data.keys().hasAll([
+          'invitationId', 'ownerId', 'slug', 'templateId', 'status',
+          'groomData', 'brideData', 'mainCouplePhoto', 'closingPhoto',
+          'eventData', 'storyData', 'gallery', 'musicData',
+          'enabledSections', 'giftData', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'invitationId', 'ownerId', 'slug', 'templateId', 'status',
+          'groomData', 'brideData', 'mainCouplePhoto', 'closingPhoto',
+          'eventData', 'storyData', 'gallery', 'musicData',
+          'enabledSections', 'giftData', 'createdAt', 'updatedAt'
+        ])
+        && data.invitationId == invitationId
+        && isValidId(data.ownerId)
+        && isValidSlug(data.slug)
+        && isValidTemplateId(data.templateId)
+        && data.status in ['draft', 'published']
+        && isValidPersonMap(data.groomData)
+        && isValidPersonMap(data.brideData)
+        && data.mainCouplePhoto is string && data.mainCouplePhoto.size() <= 1000
+        && data.closingPhoto is string && data.closingPhoto.size() <= 1000
+        && isValidEventData(data.eventData)
+        && isValidStoryData(data.storyData)
+        && isValidGallery(data.gallery)
+        && isValidMusicData(data.musicData)
+        && isValidEnabledSections(data.enabledSections)
+        && isValidGiftData(data.giftData)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSlugRecord(data, slugParam) {
+      return data.keys().hasAll(['slug', 'invitationId', 'ownerId', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['slug', 'invitationId', 'ownerId', 'status', 'createdAt', 'updatedAt'])
+        && data.slug == slugParam
+        && isValidSlug(data.slug)
+        && isValidId(data.invitationId)
+        && isValidId(data.ownerId)
+        && data.status in ['draft', 'published']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGuest(data, guestId) {
+      return data.keys().hasAll([
+          'guestId', 'invitationId', 'ownerId', 'guestName', 'guestGroup',
+          'uniqueToken', 'invitationUrl', 'invitationSent', 'rsvpStatus', 'guestCount',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'guestId', 'invitationId', 'ownerId', 'guestName', 'guestGroup',
+          'uniqueToken', 'invitationUrl', 'invitationSent', 'rsvpStatus', 'guestCount',
+          'createdAt', 'updatedAt'
+        ])
+        && data.guestId == guestId
+        && isValidId(data.invitationId)
+        && isValidId(data.ownerId)
+        && data.guestName is string && data.guestName.size() >= 1 && data.guestName.size() <= 100
+        && data.guestGroup is string && data.guestGroup.size() <= 60
+        && isValidId(data.uniqueToken) && data.uniqueToken.size() <= 64
+        && data.invitationUrl is string && data.invitationUrl.size() <= 500
+        && data.invitationSent is bool
+        && data.rsvpStatus in ['pending', 'attending', 'declined']
+        && data.guestCount is int && data.guestCount >= 0 && data.guestCount <= 20
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRsvp(data, rsvpId) {
+      return data.keys().hasAll([
+          'rsvpId', 'invitationId', 'ownerId', 'guestName',
+          'attendance', 'guestCount', 'message', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'rsvpId', 'invitationId', 'ownerId', 'guestId', 'guestName',
+          'attendance', 'guestCount', 'message', 'createdAt'
+        ])
+        && data.rsvpId == rsvpId
+        && isValidId(data.invitationId)
+        && isValidId(data.ownerId)
+        && (!('guestId' in data) || (data.guestId is string && data.guestId.size() <= 128))
+        && data.guestName is string && data.guestName.size() >= 1 && data.guestName.size() <= 100
+        && data.attendance in ['attending', 'unable']
+        && data.guestCount is int && data.guestCount >= 1 && data.guestCount <= 20
+        && data.message is string && data.message.size() <= 500
+        && data.createdAt is timestamp;
+    }
+
+    function isValidWish(data, wishId) {
+      return data.keys().hasAll([
+          'wishId', 'invitationId', 'ownerId', 'guestName',
+          'message', 'isVisible', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'wishId', 'invitationId', 'ownerId', 'guestName',
+          'message', 'isVisible', 'createdAt'
+        ])
+        && data.wishId == wishId
+        && isValidId(data.invitationId)
+        && isValidId(data.ownerId)
+        && data.guestName is string && data.guestName.size() >= 1 && data.guestName.size() <= 80
+        && data.message is string && data.message.size() >= 1 && data.message.size() <= 500
+        && data.isVisible is bool
+        && data.createdAt is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /users/{userId} (PII Strictly Restricted to Owner)
+    // -------------------------------------------------------------------------
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'photoUrl', 'updatedAt']);
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /invitations/{invitationId}
+    // -------------------------------------------------------------------------
+    match /invitations/{invitationId} {
+      allow get: if isValidId(invitationId) && (
+        existing().status == 'published' ||
+        (isVerifiedUser() && existing().ownerId == request.auth.uid)
+      );
+
+      allow list: if resource.data.status == 'published' ||
+        (isVerifiedUser() && resource.data.ownerId == request.auth.uid);
+
+      allow create: if isValidId(invitationId)
+        && isVerifiedUser()
+        && isValidInvitation(incoming(), invitationId)
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(invitationId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid
+        && isValidInvitation(incoming(), invitationId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().invitationId == existing().invitationId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'slug', 'templateId', 'status', 'groomData', 'brideData',
+            'mainCouplePhoto', 'closingPhoto', 'eventData', 'storyData',
+            'gallery', 'musicData', 'enabledSections', 'giftData', 'updatedAt'
+          ]) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        );
+
+      allow delete: if isValidId(invitationId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /slugs/{slug}
+    // -------------------------------------------------------------------------
+    match /slugs/{slug} {
+      allow get: if isValidSlug(slug) && (
+        resource == null ||
+        existing().status == 'published' ||
+        (isVerifiedUser() && existing().ownerId == request.auth.uid)
+      );
+      allow list: if false;
+
+      allow create: if isValidSlug(slug)
+        && isVerifiedUser()
+        && isValidSlugRecord(incoming(), slug)
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/invitations/$(incoming().invitationId))
+        && getAfter(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.ownerId == request.auth.uid;
+
+      allow update: if isValidSlug(slug)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid
+        && isValidSlugRecord(incoming(), slug)
+        && incoming().ownerId == existing().ownerId
+        && incoming().slug == existing().slug
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'invitationId', 'updatedAt']);
+
+      allow delete: if isValidSlug(slug)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /guests/{guestId} (Private Guest Lists)
+    // -------------------------------------------------------------------------
+    match /guests/{guestId} {
+      allow get: if isValidId(guestId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+
+      allow list: if isVerifiedUser()
+        && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isValidId(guestId)
+        && isVerifiedUser()
+        && isValidGuest(incoming(), guestId)
+        && incoming().ownerId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/invitations/$(incoming().invitationId))
+        && get(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.ownerId == request.auth.uid;
+
+      allow update: if isValidId(guestId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid
+        && isValidGuest(incoming(), guestId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().guestId == existing().guestId
+        && incoming().invitationId == existing().invitationId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'guestName', 'guestGroup', 'invitationUrl', 'invitationSent', 'rsvpStatus', 'guestCount', 'updatedAt'
+        ]);
+
+      allow delete: if isValidId(guestId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /rsvps/{rsvpId} (Public Guest Submit, Owner-Only Read)
+    // -------------------------------------------------------------------------
+    match /rsvps/{rsvpId} {
+      allow get: if isValidId(rsvpId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+
+      allow list: if isVerifiedUser()
+        && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isValidId(rsvpId)
+        && isValidRsvp(incoming(), rsvpId)
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/invitations/$(incoming().invitationId))
+        && get(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.status == 'published'
+        && get(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.ownerId == incoming().ownerId;
+
+      allow update: if false;
+
+      allow delete: if isValidId(rsvpId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /wishes/{wishId} (Public Guestbook Submit & Read on Published)
+    // -------------------------------------------------------------------------
+    match /wishes/{wishId} {
+      allow get: if isValidId(wishId) && (
+        existing().isVisible == true ||
+        (isVerifiedUser() && existing().ownerId == request.auth.uid)
+      );
+
+      allow list: if resource.data.isVisible == true ||
+        (isVerifiedUser() && resource.data.ownerId == request.auth.uid);
+
+      allow create: if isValidId(wishId)
+        && isValidWish(incoming(), wishId)
+        && incoming().isVisible == true
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/invitations/$(incoming().invitationId))
+        && get(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.status == 'published'
+        && get(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.ownerId == incoming().ownerId;
+
+      allow update: if isValidId(wishId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid
+        && isValidWish(incoming(), wishId)
+        && incoming().ownerId == existing().ownerId
+        && incoming().wishId == existing().wishId
+        && incoming().invitationId == existing().invitationId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['isVisible']);
+
+      allow delete: if isValidId(wishId)
+        && isVerifiedUser()
+        && existing().ownerId == request.auth.uid;
+    }
+  }
+}

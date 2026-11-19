@@ -1,0 +1,376 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated WEDLINK studio creator profile (PII restricted to owner).",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "photoUrl": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "name", "email", "createdAt", "updatedAt"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "Digital wedding invitation configuration, editorial content, and design settings.",
+      "type": "object",
+      "properties": {
+        "invitationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "minLength": 3,
+          "maxLength": 80
+        },
+        "templateId": {
+          "type": "string",
+          "enum": [
+            "eternal-bloom",
+            "the-tuscany",
+            "sage-soul",
+            "golden-hour",
+            "pure-elegance",
+            "floral-whisper",
+            "modern-muse",
+            "the-grand-affair"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "published"]
+        },
+        "groomData": {
+          "type": "object"
+        },
+        "brideData": {
+          "type": "object"
+        },
+        "mainCouplePhoto": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "closingPhoto": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "eventData": {
+          "type": "object"
+        },
+        "storyData": {
+          "type": "object"
+        },
+        "gallery": {
+          "type": "array"
+        },
+        "musicData": {
+          "type": "object"
+        },
+        "enabledSections": {
+          "type": "object"
+        },
+        "giftData": {
+          "type": "object"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "invitationId",
+        "ownerId",
+        "slug",
+        "templateId",
+        "status",
+        "groomData",
+        "brideData",
+        "mainCouplePhoto",
+        "closingPhoto",
+        "eventData",
+        "storyData",
+        "gallery",
+        "musicData",
+        "enabledSections",
+        "giftData",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SlugRecord": {
+      "title": "SlugRecord",
+      "description": "Unique public slug index mapping /wedding/:slug to an invitation document.",
+      "type": "object",
+      "properties": {
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "minLength": 3,
+          "maxLength": 80
+        },
+        "invitationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "published"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["slug", "invitationId", "ownerId", "status", "createdAt", "updatedAt"]
+    },
+    "Guest": {
+      "title": "Guest",
+      "description": "Private guest list item with personalized invitation URL owned by the invitation creator.",
+      "type": "object",
+      "properties": {
+        "guestId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "invitationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "guestName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "guestGroup": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "uniqueToken": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 64
+        },
+        "invitationUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "invitationSent": {
+          "type": "boolean"
+        },
+        "rsvpStatus": {
+          "type": "string",
+          "enum": ["pending", "attending", "declined"]
+        },
+        "guestCount": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "guestId",
+        "invitationId",
+        "ownerId",
+        "guestName",
+        "guestGroup",
+        "uniqueToken",
+        "invitationUrl",
+        "invitationSent",
+        "rsvpStatus",
+        "guestCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Rsvp": {
+      "title": "Rsvp",
+      "description": "Publicly submittable RSVP response tied to a published wedding invitation; readable only by owner.",
+      "type": "object",
+      "properties": {
+        "rsvpId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "invitationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "guestId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "guestName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "attendance": {
+          "type": "string",
+          "enum": ["attending", "unable"]
+        },
+        "guestCount": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "rsvpId",
+        "invitationId",
+        "ownerId",
+        "guestName",
+        "attendance",
+        "guestCount",
+        "message",
+        "createdAt"
+      ]
+    },
+    "Wish": {
+      "title": "Wish",
+      "description": "Public guestbook blessing/wish submitted by guests for a published wedding invitation.",
+      "type": "object",
+      "properties": {
+        "wishId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "invitationId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "ownerId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+$",
+          "maxLength": 128
+        },
+        "guestName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "isVisible": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "wishId",
+        "invitationId",
+        "ownerId",
+        "guestName",
+        "message",
+        "isVisible",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles accessible strictly by the authenticated owner."
+    },
+    "/invitations/{invitationId}": {
+      "schema": { "$ref": "#/entities/Invitation" },
+      "description": "Wedding invitations owned by authenticated creators; published invitations are publicly readable."
+    },
+    "/slugs/{slug}": {
+      "schema": { "$ref": "#/entities/SlugRecord" },
+      "description": "Unique slug index resolving public wedding URLs to invitation documents."
+    },
+    "/guests/{guestId}": {
+      "schema": { "$ref": "#/entities/Guest" },
+      "description": "Private guest lists managed by invitation owners."
+    },
+    "/rsvps/{rsvpId}": {
+      "schema": { "$ref": "#/entities/Rsvp" },
+      "description": "Guest RSVP submissions linked to published invitations; readable only by invitation owners."
+    },
+    "/wishes/{wishId}": {
+      "schema": { "$ref": "#/entities/Wish" },
+      "description": "Public wedding wishes displayed on published invitations and moderated by owners."
+    }
+  }
+}

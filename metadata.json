@@ -1,0 +1,6 @@
+{
+  "name": "WEDLINK — Digital Wedding Invitation Studio",
+  "description": "Your Love Story, Beautifully Invited. Create timeless, editorial digital wedding invitations with live preview, personalized guest links, RSVP tracking, and digital gifts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
